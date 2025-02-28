@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     locales \
     xvfb \
     python3.9 \
+    gosu \
     python3-pip
 
 # RUN apt-get clean && rm -rf /var/lib/apt/lists/*

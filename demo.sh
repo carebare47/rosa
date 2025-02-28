@@ -25,51 +25,22 @@ fi
 HEADLESS=${HEADLESS:-false}
 DEVELOPMENT=${DEVELOPMENT:-false}
 
-# Enable X11 forwarding based on OS
-case "$(uname)" in
-    Linux*|Darwin*)
-        echo "Enabling X11 forwarding..."
-        # If running under WSL, use :0 for DISPLAY
-        if grep -q "WSL" /proc/version; then
-            export DISPLAY=:0
-        else
-            export DISPLAY=host.docker.internal:0
-        fi
-        xhost +
-        ;;
-    MINGW*|CYGWIN*|MSYS*)
-        echo "Enabling X11 forwarding for Windows..."
-        export DISPLAY=host.docker.internal:0
-        ;;
-    *)
-        echo "Error: Unsupported operating system."
-        exit 1
-        ;;
-esac
-
-# Check if X11 forwarding is working
-if ! xset q &>/dev/null; then
-    echo "Error: X11 forwarding is not working. Please check your X11 server and try again."
-    exit 1
-fi
 
 # Build and run the Docker container
 CONTAINER_NAME="rosa-turtlesim-demo"
 echo "Building the $CONTAINER_NAME Docker image..."
-docker build --build-arg DEVELOPMENT=$DEVELOPMENT -t $CONTAINER_NAME -f Dockerfile . || { echo "Error: Docker build failed"; exit 1; }
+docker build --no-cache --build-arg DEVELOPMENT=$DEVELOPMENT -t $CONTAINER_NAME -f Dockerfile . || { echo "Error: Docker build failed"; exit 1; }
+xhost +
 
-echo "Running the Docker container..."
-docker run -it --rm --name $CONTAINER_NAME \
-    -e DISPLAY=$DISPLAY \
-    -e HEADLESS=$HEADLESS \
-    -e DEVELOPMENT=$DEVELOPMENT \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v "$PWD/src":/app/src \
-    -v "$PWD/tests":/app/tests \
-    --network host \
-    $CONTAINER_NAME
+docker run --name $CONTAINER_NAME -it --security-opt seccomp=unconfined \
+              --network=host --ipc=host --pid=host --privileged \
+              --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all \
+              -e DISPLAY -e QT_X11_NO_MITSHM=1 -e LOCAL_USER_ID=$(id -u) \
+              -e XDG_RUNTIME_DIR=/run/user/$(id -u) -e ROS_MASTER_URI=http://localhost:11311\
+              -v /tmp/.X11-unix:/tmp/.X11-unix:rw -v /dev/input:/dev/input:rw -v /dev:/dev \
+              -e HEADLESS=$HEADLESS \
+              -e DEVELOPMENT=$DEVELOPMENT \
+              -v "$PWD/src":/app/src \
+              -v "$PWD/tests":/app/tests \
+              -v /run/udev/data:/run/udev/data:rw $CONTAINER_NAME
 
-# Disable X11 forwarding
-xhost -
-
-exit 0
